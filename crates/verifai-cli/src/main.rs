@@ -22,6 +22,10 @@ struct Cli {
     #[arg(long, global = true)]
     print_json: bool,
 
+    /// Write success output as JSON to this file (stdout stays empty)
+    #[arg(long, global = true)]
+    json_file: Option<PathBuf>,
+
     #[command(subcommand)]
     cmd: Command,
 }
@@ -116,21 +120,23 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let model_hash = sha256(&model_bin);
 
             if let Some(out_path) = &out {
-                write_file_atomic(&out_path, &model_bin)?;
+                write_file_atomic(out_path, &model_bin)?;
             }
 
-            if !cli.quiet {
-                if cli.print_json {
-                    let payload = JsonOut::HashModel {
-                        ok: true,
-                        model_hash: hex_encode_32(model_hash),
-                        out_model_bin: out.as_ref().map(|p| path_string_ref(p)),
-                    };
-                    print_json_line(&payload)?;
-                } else {
-                    println!("{}", hex_encode_32(model_hash));
-                }
-            }
+            let model_hash_hex = hex_encode_32(model_hash);
+            let payload = JsonOut::HashModel {
+                ok: true,
+                model_hash: model_hash_hex.clone(),
+                out_model_bin: out.as_ref().map(|p| path_string_ref(p)),
+            };
+
+            emit_success(
+                cli.quiet,
+                cli.print_json,
+                cli.json_file.as_ref(),
+                payload,
+                || println!("{}", model_hash_hex),
+            )?;
             Ok(())
         }
 
@@ -161,8 +167,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 .map_err(|_| CliError::InvalidHex("key_hex must be 64 hex chars (32 bytes)"))?;
 
             let runtime_id = match runtime_id_hex {
-                Some(s) => parse_hex_32(&s)
-                    .map_err(|_| CliError::InvalidHex("runtime_id_hex must be 64 hex chars (32 bytes)"))?,
+                Some(s) => parse_hex_32(&s).map_err(|_| {
+                    CliError::InvalidHex("runtime_id_hex must be 64 hex chars (32 bytes)")
+                })?,
                 None => sha256(b"verifai-cli-default-runtime"),
             };
 
@@ -180,32 +187,42 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let input_hash = sha256(&input_bin);
             let output_hash = sha256(&output_bin);
 
-            if !cli.quiet {
-                if cli.print_json {
-                    let payload = JsonOut::Prove {
-                        ok: true,
-                        runtime_id: hex_encode_32(runtime_id),
-                        model_hash: hex_encode_32(model_hash),
-                        input_hash: hex_encode_32(input_hash),
-                        output_hash: hex_encode_32(output_hash),
-                        trace_root: hex_encode_32(artifact.trace_root),
-                        sig_pubkey: hex_encode_32(artifact.sig_pubkey),
-                        out_model_bin: out_model_bin.as_ref().map(|p| path_string_ref(p)),
-                        out_input_bin: out_input_bin.as_ref().map(|p| path_string_ref(p)),
-                        out_output: path_string(out_output),
-                        out_artifact: path_string(out_artifact),
-                    };
-                    print_json_line(&payload)?;
-                } else {
+            let model_hash_hex = hex_encode_32(model_hash);
+            let input_hash_hex = hex_encode_32(input_hash);
+            let output_hash_hex = hex_encode_32(output_hash);
+            let runtime_id_hex = hex_encode_32(runtime_id);
+            let trace_root_hex = hex_encode_32(artifact.trace_root);
+            let sig_pubkey_hex = hex_encode_32(artifact.sig_pubkey);
+
+            let payload = JsonOut::Prove {
+                ok: true,
+                runtime_id: runtime_id_hex.clone(),
+                model_hash: model_hash_hex.clone(),
+                input_hash: input_hash_hex.clone(),
+                output_hash: output_hash_hex.clone(),
+                trace_root: trace_root_hex.clone(),
+                sig_pubkey: sig_pubkey_hex.clone(),
+                out_model_bin: out_model_bin.as_ref().map(|p| path_string_ref(p)),
+                out_input_bin: out_input_bin.as_ref().map(|p| path_string_ref(p)),
+                out_output: path_string_ref(&out_output),
+                out_artifact: path_string_ref(&out_artifact),
+            };
+
+            emit_success(
+                cli.quiet,
+                cli.print_json,
+                cli.json_file.as_ref(),
+                payload,
+                || {
                     println!("ok");
-                    println!("model_hash  : {}", hex_encode_32(model_hash));
-                    println!("input_hash  : {}", hex_encode_32(input_hash));
-                    println!("output_hash : {}", hex_encode_32(output_hash));
-                    println!("runtime_id  : {}", hex_encode_32(runtime_id));
-                    println!("trace_root  : {}", hex_encode_32(artifact.trace_root));
-                    println!("sig_pubkey  : {}", hex_encode_32(artifact.sig_pubkey));
-                }
-            }
+                    println!("model_hash  : {}", model_hash_hex);
+                    println!("input_hash  : {}", input_hash_hex);
+                    println!("output_hash : {}", output_hash_hex);
+                    println!("runtime_id  : {}", runtime_id_hex);
+                    println!("trace_root  : {}", trace_root_hex);
+                    println!("sig_pubkey  : {}", sig_pubkey_hex);
+                },
+            )?;
 
             Ok(())
         }
@@ -230,24 +247,30 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let a = ProofArtifactV0::decode_bin(&artifact_bin)
                 .map_err(|_| CliError::VerifyFailed("artifact decode failed".into()))?;
 
-            if !cli.quiet {
-                if cli.print_json {
-                    let payload = JsonOut::Verify {
-                        ok: true,
-                        trace_root: hex_encode_32(a.trace_root),
-                        sig_pubkey: hex_encode_32(a.sig_pubkey),
-                        artifact: path_string(artifact),
-                        model: path_string(model),
-                        input: path_string(input),
-                        output: path_string(output),
-                    };
-                    print_json_line(&payload)?;
-                } else {
+            let trace_root_hex = hex_encode_32(a.trace_root);
+            let sig_pubkey_hex = hex_encode_32(a.sig_pubkey);
+
+            let payload = JsonOut::Verify {
+                ok: true,
+                trace_root: trace_root_hex.clone(),
+                sig_pubkey: sig_pubkey_hex.clone(),
+                artifact: path_string(artifact),
+                model: path_string(model),
+                input: path_string(input),
+                output: path_string(output),
+            };
+
+            emit_success(
+                cli.quiet,
+                cli.print_json,
+                cli.json_file.as_ref(),
+                payload,
+                || {
                     println!("ok");
-                    println!("trace_root : {}", hex_encode_32(a.trace_root));
-                    println!("sig_pubkey : {}", hex_encode_32(a.sig_pubkey));
-                }
-            }
+                    println!("trace_root : {}", trace_root_hex);
+                    println!("sig_pubkey : {}", sig_pubkey_hex);
+                },
+            )?;
 
             Ok(())
         }
@@ -289,6 +312,39 @@ enum JsonOut {
         input: String,
         output: String,
     },
+}
+
+fn emit_success<F>(
+    quiet: bool,
+    print_json: bool,
+    json_file: Option<&PathBuf>,
+    payload: JsonOut,
+    human: F,
+) -> Result<(), CliError>
+where
+    F: FnOnce(),
+{
+    maybe_write_json(json_file, &payload)?;
+    let should_print = !quiet && json_file.is_none();
+    if should_print {
+        if print_json {
+            print_json_line(&payload)?;
+        } else {
+            human();
+        }
+    }
+    Ok(())
+}
+
+fn maybe_write_json(json_file: Option<&PathBuf>, payload: &JsonOut) -> Result<(), CliError> {
+    if let Some(path) = json_file {
+        let mut bytes = serde_json::to_string(payload)
+            .map_err(|e| CliError::Json(format!("{e}")))?
+            .into_bytes();
+        bytes.push(b'\n');
+        write_file_atomic(path, &bytes)?;
+    }
+    Ok(())
 }
 
 fn print_json_line(payload: &JsonOut) -> Result<(), CliError> {
@@ -345,15 +401,16 @@ fn write_file_atomic(path: &PathBuf, data: &[u8]) -> Result<(), CliError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path
         .file_name()
-        .ok_or(CliError::Io(format!("invalid output path: {}", path.display())))?
+        .ok_or(CliError::Io(format!(
+            "invalid output path: {}",
+            path.display()
+        )))?
         .to_string_lossy();
 
     let tmp_path = parent.join(format!(".{}.tmp", file_name));
-    fs::write(&tmp_path, data)
-        .map_err(|e| CliError::Io(format!("{}: {e}", tmp_path.display())))?;
+    fs::write(&tmp_path, data).map_err(|e| CliError::Io(format!("{}: {e}", tmp_path.display())))?;
 
-    fs::rename(&tmp_path, path)
-        .map_err(|e| CliError::Io(format!("{}: {e}", path.display())))?;
+    fs::rename(&tmp_path, path).map_err(|e| CliError::Io(format!("{}: {e}", path.display())))?;
 
     Ok(())
 }

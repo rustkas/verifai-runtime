@@ -9,3 +9,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 verifai-core = { path = "../verifai-core" }
 verifai-runtime = { path = "../verifai-runtime" }
+
+[dev-dependencies]
+assert_cmd = "2"
+assert_fs = "1"
