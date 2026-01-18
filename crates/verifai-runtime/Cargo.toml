@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 verifai-core = { path = "../verifai-core" }
+
+[dev-dependencies]
+proptest = "1"
