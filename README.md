@@ -1,4 +1,4 @@
-# verifai-runtime
+# VerifAI Runtime
 
 Deterministic inference runtime that produces a signed Proof Artifact binding:
 - model hash

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: fmt check
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: tests
+        run: cargo test
+
+  determinism:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: prove test vector
+        run: |
+          mkdir -p determinism
+          cargo run -p verifai-cli -- prove \
+            --model test-vectors/case-1/model.json \
+            --input test-vectors/case-1/input.json \
+            --out-output determinism/output.bin \
+            --out-artifact determinism/artifact.bin \
+            --key-hex 0909090909090909090909090909090909090909090909090909090909090909 \
+            --runtime-id-hex 0707070707070707070707070707070707070707070707070707070707070707
+          cmp determinism/output.bin test-vectors/case-1/expected_output.bin
+          cmp determinism/artifact.bin test-vectors/case-1/expected_artifact.bin
