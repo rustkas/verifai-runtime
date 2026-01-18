@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target
+**/target
+
+# Lockfile (choose whether you want to track it)
+Cargo.lock
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+*.tmp
+*.log
+.DS_Store
