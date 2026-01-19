@@ -16,7 +16,12 @@ impl<'a> Reader<'a> {
     }
 
     pub fn read_exact(&mut self, n: usize) -> Result<&'a [u8], BytesError> {
-        if self.pos.checked_add(n).filter(|&end| end <= self.buf.len()).is_none() {
+        if self
+            .pos
+            .checked_add(n)
+            .filter(|&end| end <= self.buf.len())
+            .is_none()
+        {
             return Err(BytesError::UnexpectedEof);
         }
         let start = self.pos;

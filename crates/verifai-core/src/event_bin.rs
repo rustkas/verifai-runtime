@@ -1,4 +1,4 @@
-use crate::bytes::{push_bytes, push_f64_le, push_u32_le, push_u8, Reader, BytesError};
+use crate::bytes::{push_bytes, push_f64_le, push_u32_le, push_u8, BytesError, Reader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivationKind {
@@ -18,14 +18,19 @@ impl ActivationKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraceEventV0 {
-    OpLinear { op_id: u32, z: f64 },
+    OpLinear {
+        op_id: u32,
+        z: f64,
+    },
     OpActivation {
         op_id: u32,
         kind: ActivationKind,
         input: f64,
         output: f64,
     },
-    OpOutput { y: f64 },
+    OpOutput {
+        y: f64,
+    },
 }
 
 impl TraceEventV0 {

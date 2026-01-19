@@ -121,7 +121,7 @@ fn main() {
 
 fn run(cli: Cli) -> Result<(), CliError> {
     match cli.cmd {
-        Command::HashModel { model, out } => {
+        Command::HashModel { ref model, ref out } => {
             let model_v0 = read_model_json(&model)?;
             let model_bin = model_v0.encode_bin();
             let model_hash = sha256(&model_bin);
@@ -137,26 +137,20 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 out_model_bin: out.as_ref().map(|p| path_string_ref(p)),
             };
 
-            emit_success(
-                cli.quiet,
-                cli.print_json,
-                cli.json_file.as_ref(),
-                payload,
-                || println!("{}", model_hash_hex),
-            )?;
+            emit_success(&cli, payload, || println!("{}", model_hash_hex))?;
             Ok(())
         }
 
         Command::Prove {
-            model,
-            input,
-            out_output,
-            out_artifact,
-            out_model_bin,
-            out_input_bin,
-            key_hex,
+            ref model,
+            ref input,
+            ref out_output,
+            ref out_artifact,
+            ref out_model_bin,
+            ref out_input_bin,
+            ref key_hex,
             attest,
-            runtime_id_hex,
+            ref runtime_id_hex,
         } => {
             let model_v0 = read_model_json(&model)?;
             let input_v0 = read_input_json(&input)?;
@@ -175,7 +169,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 .map_err(|_| CliError::InvalidHex("key_hex must be 64 hex chars (32 bytes)"))?;
 
             let runtime_id = match runtime_id_hex {
-                Some(s) => parse_hex_32(&s).map_err(|_| {
+                Some(s) => parse_hex_32(s).map_err(|_| {
                     CliError::InvalidHex("runtime_id_hex must be 64 hex chars (32 bytes)")
                 })?,
                 None => sha256(b"verifai-cli-default-runtime"),
@@ -250,38 +244,32 @@ fn run(cli: Cli) -> Result<(), CliError> {
                     .map(|a| hex_encode_slice(&a.attestation)),
             };
 
-            emit_success(
-                cli.quiet,
-                cli.print_json,
-                cli.json_file.as_ref(),
-                payload,
-                || {
-                    println!("ok");
-                    println!("model_hash  : {}", model_hash_hex);
-                    println!("input_hash  : {}", input_hash_hex);
-                    println!("output_hash : {}", output_hash_hex);
-                    println!("runtime_id  : {}", runtime_id_hex);
-                    println!("trace_root  : {}", trace_root_hex);
-                    println!("sig_pubkey  : {}", sig_pubkey_hex);
-                    if let Some(att) = attestation_bundle.as_ref() {
-                        println!("attester_id: {}", hex_encode_32(att.attester_id));
-                        println!(
-                            "attestation_measurement : {}",
-                            hex_encode_32(att.measurement)
-                        );
-                        println!("attestation : {}", hex_encode_slice(&att.attestation));
-                    }
-                },
-            )?;
+            emit_success(&cli, payload, || {
+                println!("ok");
+                println!("model_hash  : {}", model_hash_hex);
+                println!("input_hash  : {}", input_hash_hex);
+                println!("output_hash : {}", output_hash_hex);
+                println!("runtime_id  : {}", runtime_id_hex);
+                println!("trace_root  : {}", trace_root_hex);
+                println!("sig_pubkey  : {}", sig_pubkey_hex);
+                if let Some(att) = attestation_bundle.as_ref() {
+                    println!("attester_id: {}", hex_encode_32(att.attester_id));
+                    println!(
+                        "attestation_measurement : {}",
+                        hex_encode_32(att.measurement)
+                    );
+                    println!("attestation : {}", hex_encode_slice(&att.attestation));
+                }
+            })?;
 
             Ok(())
         }
 
         Command::Verify {
-            artifact,
-            model,
-            input,
-            output,
+            ref artifact,
+            ref model,
+            ref input,
+            ref output,
         } => {
             let artifact_bin = read_file(&artifact)?;
             let model_v0 = read_model_json(&model)?;
@@ -329,10 +317,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 ok: true,
                 trace_root: trace_root_hex.clone(),
                 sig_pubkey: sig_pubkey_hex.clone(),
-                artifact: path_string(artifact),
-                model: path_string(model),
-                input: path_string(input),
-                output: path_string(output),
+                artifact: path_string_ref(artifact),
+                model: path_string_ref(model),
+                input: path_string_ref(input),
+                output: path_string_ref(output),
                 attester_id: attestation_bundle
                     .as_ref()
                     .map(|a| hex_encode_32(a.attester_id)),
@@ -344,25 +332,19 @@ fn run(cli: Cli) -> Result<(), CliError> {
                     .map(|a| hex_encode_slice(&a.attestation)),
             };
 
-            emit_success(
-                cli.quiet,
-                cli.print_json,
-                cli.json_file.as_ref(),
-                payload,
-                || {
-                    println!("ok");
-                    println!("trace_root : {}", trace_root_hex);
-                    println!("sig_pubkey : {}", sig_pubkey_hex);
-                    if let Some(att) = attestation_bundle.as_ref() {
-                        println!("attester_id: {}", hex_encode_32(att.attester_id));
-                        println!(
-                            "attestation_measurement : {}",
-                            hex_encode_32(att.measurement)
-                        );
-                        println!("attestation : {}", hex_encode_slice(&att.attestation));
-                    }
-                },
-            )?;
+            emit_success(&cli, payload, || {
+                println!("ok");
+                println!("trace_root : {}", trace_root_hex);
+                println!("sig_pubkey : {}", sig_pubkey_hex);
+                if let Some(att) = attestation_bundle.as_ref() {
+                    println!("attester_id: {}", hex_encode_32(att.attester_id));
+                    println!(
+                        "attestation_measurement : {}",
+                        hex_encode_32(att.measurement)
+                    );
+                    println!("attestation : {}", hex_encode_slice(&att.attestation));
+                }
+            })?;
 
             Ok(())
         }
@@ -418,35 +400,27 @@ enum JsonOut {
     },
 }
 
-fn emit_success<F>(
-    quiet: bool,
-    print_json: bool,
-    json_file: Option<&PathBuf>,
-    payload: JsonOut,
-    human: F,
-) -> Result<(), CliError>
+fn emit_success<F>(cli: &Cli, payload: JsonOut, human: F) -> Result<(), CliError>
 where
     F: FnOnce(),
 {
-    maybe_write_json(json_file, &payload)?;
-    let should_print = !quiet && json_file.is_none();
-    if should_print {
-        if print_json {
-            print_json_line(&payload)?;
-        } else {
-            human();
-        }
+    emit_json(cli, &payload)?;
+    if !cli.quiet && !cli.print_json && cli.json_file.is_none() {
+        human();
     }
     Ok(())
 }
 
-fn maybe_write_json(json_file: Option<&PathBuf>, payload: &JsonOut) -> Result<(), CliError> {
-    if let Some(path) = json_file {
+fn emit_json(cli: &Cli, payload: &JsonOut) -> Result<(), CliError> {
+    if let Some(path) = cli.json_file.as_ref() {
         let mut bytes = serde_json::to_string(payload)
             .map_err(|e| CliError::Json(format!("{e}")))?
             .into_bytes();
         bytes.push(b'\n');
         write_file_atomic(path, &bytes)?;
+    }
+    if !cli.quiet && cli.print_json && cli.json_file.is_none() {
+        print_json_line(payload)?;
     }
     Ok(())
 }
@@ -455,10 +429,6 @@ fn print_json_line(payload: &JsonOut) -> Result<(), CliError> {
     let s = serde_json::to_string(payload).map_err(|e| CliError::Json(format!("{e}")))?;
     println!("{s}");
     Ok(())
-}
-
-fn path_string(p: PathBuf) -> String {
-    path_string_ref(&p)
 }
 
 fn path_string_ref(p: &Path) -> String {
