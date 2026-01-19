@@ -4,10 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use verifai_core::artifact_bin::ProofArtifactV0;
+use verifai_core::artifact_bin::{ProofArtifactV0, ProofArtifactV1};
 use verifai_core::hash::sha256;
 use verifai_core::model_bin::{InputV0, LogisticModelV0};
-use verifai_runtime::{prove_lr_v0, verify_lr_v0};
+use verifai_runtime::{
+    artifact_version, prove_lr_v0, prove_lr_v1_with_attester, verify_lr_v0, verify_lr_v1,
+    NoopAttester,
+};
 
 #[derive(Parser)]
 #[command(name = "verifai")]
@@ -72,6 +75,10 @@ enum Command {
         /// Signing key (Ed25519 secret key) as 64 hex chars (32 bytes)
         #[arg(long)]
         key_hex: String,
+
+        /// Produce attested ProofArtifactV1 instead of V0
+        #[arg(long)]
+        attest: bool,
 
         /// Runtime id as 64 hex chars (32 bytes). If omitted, uses sha256("verifai-cli-default-runtime")
         #[arg(long)]
@@ -148,6 +155,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             out_model_bin,
             out_input_bin,
             key_hex,
+            attest,
             runtime_id_hex,
         } => {
             let model_v0 = read_model_json(&model)?;
@@ -173,15 +181,40 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 None => sha256(b"verifai-cli-default-runtime"),
             };
 
-            let (output_bin, artifact_bin) =
+            let (output_bin, artifact_bin) = if attest {
+                prove_lr_v1_with_attester::<NoopAttester>(
+                    runtime_id,
+                    signing_key,
+                    &model_bin,
+                    &input_bin,
+                )
+                .map_err(|e| CliError::Runtime(format!("prove failed (v1): {e:?}")))?
+            } else {
                 prove_lr_v0(runtime_id, signing_key, &model_bin, &input_bin)
-                    .map_err(|e| CliError::Runtime(format!("prove failed: {e:?}")))?;
+                    .map_err(|e| CliError::Runtime(format!("prove failed: {e:?}")))?
+            };
 
             write_file_atomic(&out_output, &output_bin)?;
             write_file_atomic(&out_artifact, &artifact_bin)?;
 
-            let artifact = ProofArtifactV0::decode_bin(&artifact_bin)
-                .map_err(|_| CliError::Runtime("artifact decode failed".into()))?;
+            let artifact_version = artifact_version(&artifact_bin).unwrap_or(0);
+            let (trace_root, sig_pubkey, attestation_bundle) = match artifact_version {
+                0 => {
+                    let art = ProofArtifactV0::decode_bin(&artifact_bin)
+                        .map_err(|_| CliError::Runtime("artifact decode failed".into()))?;
+                    (art.trace_root, art.sig_pubkey, None)
+                }
+                1 => {
+                    let art = ProofArtifactV1::decode_bin(&artifact_bin)
+                        .map_err(|_| CliError::Runtime("artifact decode failed".into()))?;
+                    (art.trace_root, art.sig_pubkey, Some(art.attestation))
+                }
+                _ => {
+                    return Err(CliError::Runtime(format!(
+                        "artifact version {artifact_version} not supported"
+                    )));
+                }
+            };
 
             let model_hash = sha256(&model_bin);
             let input_hash = sha256(&input_bin);
@@ -191,8 +224,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let input_hash_hex = hex_encode_32(input_hash);
             let output_hash_hex = hex_encode_32(output_hash);
             let runtime_id_hex = hex_encode_32(runtime_id);
-            let trace_root_hex = hex_encode_32(artifact.trace_root);
-            let sig_pubkey_hex = hex_encode_32(artifact.sig_pubkey);
+            let trace_root_hex = hex_encode_32(trace_root);
+            let sig_pubkey_hex = hex_encode_32(sig_pubkey);
 
             let payload = JsonOut::Prove {
                 ok: true,
@@ -206,6 +239,15 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 out_input_bin: out_input_bin.as_ref().map(|p| path_string_ref(p)),
                 out_output: path_string_ref(&out_output),
                 out_artifact: path_string_ref(&out_artifact),
+                attester_id: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_32(a.attester_id)),
+                attestation_measurement: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_32(a.measurement)),
+                attestation: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_slice(&a.attestation)),
             };
 
             emit_success(
@@ -221,6 +263,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
                     println!("runtime_id  : {}", runtime_id_hex);
                     println!("trace_root  : {}", trace_root_hex);
                     println!("sig_pubkey  : {}", sig_pubkey_hex);
+                    if let Some(att) = attestation_bundle.as_ref() {
+                        println!("attester_id: {}", hex_encode_32(att.attester_id));
+                        println!(
+                            "attestation_measurement : {}",
+                            hex_encode_32(att.measurement)
+                        );
+                        println!("attestation : {}", hex_encode_slice(&att.attestation));
+                    }
                 },
             )?;
 
@@ -241,14 +291,39 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let model_bin = model_v0.encode_bin();
             let input_bin = input_v0.encode_bin();
 
-            verify_lr_v0(&artifact_bin, &model_bin, &input_bin, &output_bin)
-                .map_err(|e| CliError::VerifyFailed(format!("{e:?}")))?;
+            let artifact_version = artifact_version(&artifact_bin).unwrap_or(0);
+            match artifact_version {
+                0 => {
+                    verify_lr_v0(&artifact_bin, &model_bin, &input_bin, &output_bin)
+                        .map_err(|e| CliError::VerifyFailed(format!("{e:?}")))?;
+                }
+                1 => {
+                    verify_lr_v1(&artifact_bin, &model_bin, &input_bin, &output_bin)
+                        .map_err(|e| CliError::VerifyFailed(format!("{e:?}")))?;
+                }
+                _ => {
+                    return Err(CliError::VerifyFailed(format!(
+                        "unsupported artifact version: {artifact_version}"
+                    )));
+                }
+            };
 
-            let a = ProofArtifactV0::decode_bin(&artifact_bin)
-                .map_err(|_| CliError::VerifyFailed("artifact decode failed".into()))?;
+            let (trace_root, sig_pubkey, attestation_bundle) = match artifact_version {
+                0 => {
+                    let art = ProofArtifactV0::decode_bin(&artifact_bin)
+                        .map_err(|_| CliError::VerifyFailed("artifact decode failed".into()))?;
+                    (art.trace_root, art.sig_pubkey, None)
+                }
+                1 => {
+                    let art = ProofArtifactV1::decode_bin(&artifact_bin)
+                        .map_err(|_| CliError::VerifyFailed("artifact decode failed".into()))?;
+                    (art.trace_root, art.sig_pubkey, Some(art.attestation))
+                }
+                _ => unreachable!(),
+            };
 
-            let trace_root_hex = hex_encode_32(a.trace_root);
-            let sig_pubkey_hex = hex_encode_32(a.sig_pubkey);
+            let trace_root_hex = hex_encode_32(trace_root);
+            let sig_pubkey_hex = hex_encode_32(sig_pubkey);
 
             let payload = JsonOut::Verify {
                 ok: true,
@@ -258,6 +333,15 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 model: path_string(model),
                 input: path_string(input),
                 output: path_string(output),
+                attester_id: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_32(a.attester_id)),
+                attestation_measurement: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_32(a.measurement)),
+                attestation: attestation_bundle
+                    .as_ref()
+                    .map(|a| hex_encode_slice(&a.attestation)),
             };
 
             emit_success(
@@ -269,6 +353,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
                     println!("ok");
                     println!("trace_root : {}", trace_root_hex);
                     println!("sig_pubkey : {}", sig_pubkey_hex);
+                    if let Some(att) = attestation_bundle.as_ref() {
+                        println!("attester_id: {}", hex_encode_32(att.attester_id));
+                        println!(
+                            "attestation_measurement : {}",
+                            hex_encode_32(att.measurement)
+                        );
+                        println!("attestation : {}", hex_encode_slice(&att.attestation));
+                    }
                 },
             )?;
 
@@ -302,6 +394,12 @@ enum JsonOut {
         out_input_bin: Option<String>,
         out_output: String,
         out_artifact: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attester_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attestation_measurement: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attestation: Option<String>,
     },
     Verify {
         ok: bool,
@@ -311,6 +409,12 @@ enum JsonOut {
         model: String,
         input: String,
         output: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attester_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attestation_measurement: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attestation: Option<String>,
     },
 }
 
@@ -462,6 +566,10 @@ fn hex_encode(bytes: &[u8]) -> String {
         out.push(LUT[(b & 0x0F) as usize]);
     }
     String::from_utf8(out).expect("hex is valid utf-8")
+}
+
+fn hex_encode_slice(bytes: &[u8]) -> String {
+    hex_encode(bytes)
 }
 
 /* ------------------------------ Errors -------------------------------- */

@@ -1,6 +1,6 @@
+use verifai_core::bytes::BytesError;
 use verifai_core::event_bin::{ActivationKind, TraceEventV0};
 use verifai_core::model_bin::{InputV0, MlpModelV1, OutputV0};
-use verifai_core::bytes::BytesError;
 
 use crate::VerifaiError;
 
@@ -49,10 +49,7 @@ pub fn run_mlp_v1(model_bin: &[u8], input_bin: &[u8]) -> Result<MlpRun, VerifaiE
         z2 += model.w2[h] * hidden[h];
     }
 
-    events.push(TraceEventV0::OpLinear {
-        op_id: 200,
-        z: z2,
-    });
+    events.push(TraceEventV0::OpLinear { op_id: 200, z: z2 });
     let y = 1.0_f64 / (1.0_f64 + (-z2).exp());
     events.push(TraceEventV0::OpActivation {
         op_id: 300,

@@ -1,4 +1,4 @@
-use crate::bytes::{push_bytes, push_f64_le, push_u32_le, Reader, BytesError};
+use crate::bytes::{push_bytes, push_f64_le, push_u32_le, BytesError, Reader};
 
 const MODEL_MAGIC: &[u8; 8] = b"VFAIMDL0";
 const INPUT_MAGIC: &[u8; 8] = b"VFAIINP0";
@@ -116,9 +116,8 @@ impl OutputV0 {
 
 impl MlpModelV1 {
     pub fn encode_bin(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            8 + 4 + 4 + (self.w1.len() + self.b1.len() + self.w2.len()) * 8 + 8,
-        );
+        let mut out =
+            Vec::with_capacity(8 + 4 + 4 + (self.w1.len() + self.b1.len() + self.w2.len()) * 8 + 8);
         push_bytes(&mut out, MLP_MAGIC);
         push_u32_le(&mut out, self.input_dim);
         push_u32_le(&mut out, self.hidden_size);

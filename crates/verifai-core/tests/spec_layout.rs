@@ -1,4 +1,6 @@
+use verifai_core::artifact_bin::ProofArtifactV1;
 use verifai_core::artifact_bin::{ProofArtifactV0, PROOF_ARTIFACT_V0_LEN};
+use verifai_core::attestation::AttestationBundle;
 use verifai_core::model_bin::{InputV0, LogisticModelV0, OutputV0};
 
 fn sample_artifact() -> ProofArtifactV0 {
@@ -79,4 +81,28 @@ fn model_input_output_layout_and_roundtrip() {
     let output_decoded = OutputV0::decode_bin(&output_bin).expect("decode output");
     assert_eq!(output_decoded, output);
     assert_eq!(output_bin, output_decoded.encode_bin());
+}
+
+#[test]
+fn proof_artifact_v1_layout_and_roundtrip() {
+    let att = AttestationBundle {
+        attester_id: [9u8; 32],
+        measurement: [8u8; 32],
+        attestation: vec![1, 2, 3],
+    };
+    let artifact = ProofArtifactV1 {
+        version: 1,
+        runtime_id: [1u8; 32],
+        model_hash: [2u8; 32],
+        input_hash: [3u8; 32],
+        output_hash: [4u8; 32],
+        trace_root: [5u8; 32],
+        sig_pubkey: [6u8; 32],
+        signature: [7u8; 64],
+        attestation: att.clone(),
+    };
+    let encoded = artifact.encode_bin();
+    assert_eq!(encoded.len(), 2 + 32 * 6 + 64 + att.encode_bin().len());
+    let decoded = ProofArtifactV1::decode_bin(&encoded).expect("decode v1");
+    assert_eq!(decoded, artifact);
 }

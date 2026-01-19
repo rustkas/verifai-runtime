@@ -26,8 +26,7 @@ fn main() {
     let runtime_id = [7u8; 32];
     let sk = [9u8; 32];
 
-    let (output_bin, artifact_bin) =
-        prove_mlp_v1(runtime_id, sk, &model_bin, &input_bin).unwrap();
+    let (output_bin, artifact_bin) = prove_mlp_v1(runtime_id, sk, &model_bin, &input_bin).unwrap();
 
     let dir = Path::new("test-vectors/mlp-case-1");
     fs::create_dir_all(dir).unwrap();

@@ -1,6 +1,6 @@
+use verifai_core::bytes::BytesError;
 use verifai_core::event_bin::{ActivationKind, TraceEventV0};
 use verifai_core::model_bin::{InputV0, LogisticModelV0, OutputV0};
-use verifai_core::bytes::BytesError;
 
 use crate::VerifaiError;
 
@@ -34,7 +34,10 @@ pub fn run_lr_v0(model_bin: &[u8], input_bin: &[u8]) -> Result<LrRun, VerifaiErr
         TraceEventV0::OpOutput { y },
     ];
 
-    Ok(LrRun { output: OutputV0 { y }, events })
+    Ok(LrRun {
+        output: OutputV0 { y },
+        events,
+    })
 }
 
 fn map_core(_e: BytesError) -> VerifaiError {

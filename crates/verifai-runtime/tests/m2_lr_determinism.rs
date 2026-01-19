@@ -30,7 +30,9 @@ fn test_trace_is_deterministic_and_non_empty() {
         weights: vec![0.0, 0.0, 0.0, 0.0],
         bias: 0.0,
     };
-    let input = InputV0 { x: vec![0.0, 0.0, 0.0, 0.0] };
+    let input = InputV0 {
+        x: vec![0.0, 0.0, 0.0, 0.0],
+    };
 
     let model_bin = model.encode_bin();
     let input_bin = input.encode_bin();

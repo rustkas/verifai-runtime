@@ -36,10 +36,7 @@ fn test_mlp_verify_detects_tamper() {
     let model = MlpModelV1 {
         input_dim: 4,
         hidden_size: 2,
-        w1: vec![
-            0.1, -0.2, 0.3, 0.4,
-            -0.1, 0.5, 0.2, -0.3,
-        ],
+        w1: vec![0.1, -0.2, 0.3, 0.4, -0.1, 0.5, 0.2, -0.3],
         b1: vec![0.0, -0.1],
         w2: vec![0.2, -0.4],
         b2: 0.05,
